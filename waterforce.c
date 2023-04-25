@@ -25,6 +25,8 @@
 #define WATERFORCE_FAN_DUTY	0x08
 #define WATERFORCE_PUMP_DUTY	0x09
 
+DECLARE_COMPLETION(status_report_received);
+
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
 
 static const char *const waterforce_temp_label[] = {
@@ -74,9 +76,16 @@ static int waterforce_get_status(struct waterforce_data *priv)
 {
 	int ret;
 
+	reinit_completion(&status_report_received);
+
 	/* Send command for getting status */
 	ret = waterforce_write_expanded(priv, get_status_cmd, 2);
-	return ret;
+	if (ret < 0)
+		return ret;
+
+	wait_for_completion(&status_report_received);
+
+	return 0;
 }
 
 static umode_t waterforce_is_visible(const void *data,
@@ -94,7 +103,6 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
 		/* Request status on demand */
 		ret = waterforce_get_status(priv);
-
 		if (ret < 0)
 			return -ENODATA;
 	}
@@ -168,6 +176,8 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	priv->speed_input[1] = get_unaligned_le16(priv->buffer + WATERFORCE_PUMP_SPEED);
 	priv->speed_input[2] = priv->buffer[WATERFORCE_FAN_DUTY];
 	priv->speed_input[3] = priv->buffer[WATERFORCE_PUMP_DUTY];
+
+	complete(&status_report_received);
 
 	priv->updated = jiffies;
 
