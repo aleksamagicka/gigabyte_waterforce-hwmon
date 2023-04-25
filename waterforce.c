@@ -70,7 +70,6 @@ static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd
 	return ret;
 }
 
-/* Expects the mutex to be locked */
 static int waterforce_get_status(struct waterforce_data *priv)
 {
 	int ret;
@@ -127,6 +126,7 @@ static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types ty
 	default:
 		return -EOPNOTSUPP;	/* unreachable */
 	}
+
 	return 0;
 }
 
