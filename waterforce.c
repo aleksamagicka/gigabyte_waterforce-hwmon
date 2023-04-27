@@ -83,7 +83,9 @@ static int waterforce_get_status(struct waterforce_data *priv)
 	if (ret < 0)
 		return ret;
 
-	wait_for_completion(&status_report_received);
+	if (!wait_for_completion_timeout
+	    (&status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+		return -ENODATA;
 
 	return 0;
 }
