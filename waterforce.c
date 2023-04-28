@@ -35,9 +35,7 @@ static const char *const waterforce_temp_label[] = {
 
 static const char *const waterforce_speed_label[] = {
 	"Fan speed",
-	"Pump speed",
-	"Fan duty",
-	"Pump duty"
+	"Pump speed"
 };
 
 struct waterforce_data {
@@ -47,7 +45,8 @@ struct waterforce_data {
 
 	/* Sensor data */
 	s32 temp_input[1];
-	u16 speed_input[4];
+	u16 speed_input[2];	/* Fan and pump speed in RPM */
+	u8 duty_input[2];	/* Fan and pump duty in 0-100% */
 
 	u8 *buffer;
 
@@ -93,7 +92,23 @@ static int waterforce_get_status(struct waterforce_data *priv)
 static umode_t waterforce_is_visible(const void *data,
 				     enum hwmon_sensor_types type, u32 attr, int channel)
 {
-	return 0444;
+	switch (type) {
+	case hwmon_temp:
+	case hwmon_fan:
+		return 0444;
+	case hwmon_pwm:
+		switch (attr) {
+		case hwmon_pwm_input:
+			return 0444;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
 }
 
 static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
@@ -115,6 +130,15 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 		break;
 	case hwmon_fan:
 		*val = priv->speed_input[channel];
+		break;
+	case hwmon_pwm:
+		switch (attr) {
+		case hwmon_pwm_input:
+			*val = DIV_ROUND_CLOSEST(priv->duty_input[channel] * 255, 100);
+			break;
+		default:
+			break;
+		}
 		break;
 	default:
 		return -EOPNOTSUPP;	/* unreachable */
@@ -151,9 +175,10 @@ static const struct hwmon_channel_info *waterforce_info[] = {
 			   HWMON_T_INPUT | HWMON_T_LABEL),
 	HWMON_CHANNEL_INFO(fan,
 			   HWMON_F_INPUT | HWMON_F_LABEL,
-			   HWMON_F_INPUT | HWMON_F_LABEL,
-			   HWMON_F_INPUT | HWMON_F_LABEL,
 			   HWMON_F_INPUT | HWMON_F_LABEL),
+	HWMON_CHANNEL_INFO(pwm,
+			   HWMON_PWM_INPUT,
+			   HWMON_PWM_INPUT),
 	NULL
 };
 
@@ -176,8 +201,8 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR];
 	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
 	priv->speed_input[1] = get_unaligned_le16(data + WATERFORCE_PUMP_SPEED);
-	priv->speed_input[2] = data[WATERFORCE_FAN_DUTY];
-	priv->speed_input[3] = data[WATERFORCE_PUMP_DUTY];
+	priv->duty_input[0] = data[WATERFORCE_FAN_DUTY];
+	priv->duty_input[1] = data[WATERFORCE_PUMP_DUTY];
 
 	complete(&status_report_received);
 
