@@ -47,7 +47,7 @@ struct waterforce_data {
 
 	/* Sensor data */
 	s32 temp_input[1];
-	u16 speed_input[2];
+	u16 speed_input[4];
 
 	u8 *buffer;
 
@@ -167,17 +167,17 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
 
-	if (priv->buffer[0] != get_status_cmd[0] || priv->buffer[1] != get_status_cmd[1]) {
+	if (data[0] != get_status_cmd[0] || data[1] != get_status_cmd[1]) {
 		/* Device returned improper data */
 		hid_err_once(priv->hdev, "firmware or device is possibly damaged\n");
 		return 0;
 	}
 
-	priv->temp_input[0] = priv->buffer[WATERFORCE_TEMP_SENSOR];
-	priv->speed_input[0] = get_unaligned_le16(priv->buffer + WATERFORCE_FAN_SPEED);
-	priv->speed_input[1] = get_unaligned_le16(priv->buffer + WATERFORCE_PUMP_SPEED);
-	priv->speed_input[2] = priv->buffer[WATERFORCE_FAN_DUTY];
-	priv->speed_input[3] = priv->buffer[WATERFORCE_PUMP_DUTY];
+	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR];
+	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
+	priv->speed_input[1] = get_unaligned_le16(data + WATERFORCE_PUMP_SPEED);
+	priv->speed_input[2] = data[WATERFORCE_FAN_DUTY];
+	priv->speed_input[3] = data[WATERFORCE_PUMP_DUTY];
 
 	complete(&status_report_received);
 
