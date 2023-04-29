@@ -198,7 +198,7 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		return 0;
 	}
 
-	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR];
+	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR] * 1000;
 	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
 	priv->speed_input[1] = get_unaligned_le16(data + WATERFORCE_PUMP_SPEED);
 	priv->duty_input[0] = data[WATERFORCE_FAN_DUTY];
