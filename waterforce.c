@@ -27,13 +27,18 @@
 
 DECLARE_COMPLETION(status_report_received);
 
-/* Control commands and their lengths */
+/* Control commands, inner offsets and lengths */
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
 
+#define SET_CPU_TEMP_CMD_OFFSET	3
+static const u8 set_cpu_temp_cmd[] = { 0x99, 0xE0, 0, 0, 0, 0, 0, 0, 0x30 };
+
 #define GET_STATUS_CMD_LENGTH	2
+#define SET_CPU_TEMP_CMD_LENGTH	9
 
 static const char *const waterforce_temp_label[] = {
 	"Coolant temp",
+	"User provided CPU temp"
 };
 
 static const char *const waterforce_speed_label[] = {
@@ -97,6 +102,18 @@ static umode_t waterforce_is_visible(const void *data,
 {
 	switch (type) {
 	case hwmon_temp:
+		switch (attr) {
+		case hwmon_temp_label:
+			return 0444;
+		case hwmon_temp_input:
+			/* Special case to enable writing custom temp value to device, write only */
+			if (channel == 1)
+				return 0200;
+			return 0444;
+		default:
+			break;
+		}
+		break;
 	case hwmon_fan:
 		return 0444;
 	case hwmon_pwm:
@@ -167,14 +184,48 @@ static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types ty
 	return 0;
 }
 
+static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
+			    long val)
+{
+	int ret;
+	struct waterforce_data *priv = dev_get_drvdata(dev);
+	u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
+
+	switch (type) {
+	case hwmon_temp:
+		switch (attr) {
+		case hwmon_temp_input:
+			if (val < 0 || val > 255)
+				return -EINVAL;
+
+			set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
+			ret =
+			    waterforce_write_expanded(priv, set_cpu_temp_cmd,
+						      SET_CPU_TEMP_CMD_LENGTH);
+			if (ret < 0)
+				return ret;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static const struct hwmon_ops waterforce_hwmon_ops = {
 	.is_visible = waterforce_is_visible,
 	.read = waterforce_read,
 	.read_string = waterforce_read_string,
+	.write = waterforce_write
 };
 
 static const struct hwmon_channel_info *waterforce_info[] = {
 	HWMON_CHANNEL_INFO(temp,
+			   HWMON_T_INPUT | HWMON_T_LABEL,
 			   HWMON_T_INPUT | HWMON_T_LABEL),
 	HWMON_CHANNEL_INFO(fan,
 			   HWMON_F_INPUT | HWMON_F_LABEL,
