@@ -27,7 +27,10 @@
 
 DECLARE_COMPLETION(status_report_received);
 
+/* Control commands and their lengths */
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
+
+#define GET_STATUS_CMD_LENGTH	2
 
 static const char *const waterforce_temp_label[] = {
 	"Coolant temp",
@@ -78,7 +81,7 @@ static int waterforce_get_status(struct waterforce_data *priv)
 	reinit_completion(&status_report_received);
 
 	/* Send command for getting status */
-	ret = waterforce_write_expanded(priv, get_status_cmd, 2);
+	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
