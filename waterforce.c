@@ -31,7 +31,8 @@ DECLARE_COMPLETION(status_report_received);
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
 
 #define SET_CPU_TEMP_CMD_OFFSET	3
-static const u8 set_cpu_temp_cmd[] = { 0x99, 0xE0, 0, 0, 0, 0, 0, 0, 0x30 };
+/* Sample command portraying 16c/32t, 5.5GHz CPU */
+static const u8 set_cpu_temp_cmd_template[] = { 0x99, 0xE0, 0, 0, 0x20, 0x05, 0x05, 0x10, 0x30 };
 
 #define GET_STATUS_CMD_LENGTH	2
 #define SET_CPU_TEMP_CMD_LENGTH	9
@@ -184,27 +185,30 @@ static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types ty
 	return 0;
 }
 
+static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
+{
+	u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
+
+	if (val < 0 || val > 255)
+		return -EINVAL;
+
+	memcpy(set_cpu_temp_cmd, set_cpu_temp_cmd_template, SET_CPU_TEMP_CMD_LENGTH);
+	set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
+
+	return waterforce_write_expanded(priv, set_cpu_temp_cmd,
+					 SET_CPU_TEMP_CMD_LENGTH);
+}
+
 static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			    long val)
 {
-	int ret;
 	struct waterforce_data *priv = dev_get_drvdata(dev);
-	u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
 
 	switch (type) {
 	case hwmon_temp:
 		switch (attr) {
 		case hwmon_temp_input:
-			if (val < 0 || val > 255)
-				return -EINVAL;
-
-			set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
-			ret =
-			    waterforce_write_expanded(priv, set_cpu_temp_cmd,
-						      SET_CPU_TEMP_CMD_LENGTH);
-			if (ret < 0)
-				return ret;
-			break;
+			return waterforce_set_cpu_temp(priv, val);
 		default:
 			break;
 		}
