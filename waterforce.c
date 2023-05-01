@@ -210,6 +210,7 @@ static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types ty
 
 static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
 {
+	int ret;
 	u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
 
 	if (val < 0 || val > 255)
@@ -218,12 +219,16 @@ static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
 	memcpy(set_cpu_temp_cmd, set_cpu_temp_cmd_template, SET_CPU_TEMP_CMD_LENGTH);
 	set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
 
-	return waterforce_write_expanded(priv, set_cpu_temp_cmd, SET_CPU_TEMP_CMD_LENGTH);
+	ret = waterforce_write_expanded(priv, set_cpu_temp_cmd, SET_CPU_TEMP_CMD_LENGTH);
+	if (ret < 0)
+		return ret;
+
+	return 0;
 }
 
 static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, long val)
 {
-	int i;
+	int i, ret;
 	u8 set_rpm_speed_cmd[SET_RPM_SPEED_CMD_LENGTH];
 
 	if (val < MIN_FAN_RPM)
@@ -236,7 +241,11 @@ static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, l
 	for (i = 0; i < SET_RPM_SPEED_OFFSETS_LENGTH; i++)
 		put_unaligned_be16(val, set_rpm_speed_cmd + speed_cmd_offsets[i]);
 
-	return waterforce_write_expanded(priv, set_rpm_speed_cmd, SET_RPM_SPEED_CMD_LENGTH);
+	ret = waterforce_write_expanded(priv, set_rpm_speed_cmd, SET_RPM_SPEED_CMD_LENGTH);
+	if (ret < 0)
+		return ret;
+
+	return 0;
 }
 
 static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
