@@ -18,6 +18,7 @@
 
 #define STATUS_VALIDITY		2	/* seconds */
 #define MAX_REPORT_LENGTH	6144
+#define MIN_FAN_RPM		750
 
 #define WATERFORCE_TEMP_SENSOR	0xD
 #define WATERFORCE_FAN_SPEED	0x02
@@ -30,12 +31,25 @@ DECLARE_COMPLETION(status_report_received);
 /* Control commands, inner offsets and lengths */
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
 
-#define SET_CPU_TEMP_CMD_OFFSET	3
+/* Offset in below command where CPU temp value should be set */
+#define SET_CPU_TEMP_CMD_OFFSET		3
 /* Sample command portraying 16c/32t, 5.5GHz CPU */
 static const u8 set_cpu_temp_cmd_template[] = { 0x99, 0xE0, 0, 0, 0x20, 0x05, 0x05, 0x10, 0x30 };
 
-#define GET_STATUS_CMD_LENGTH	2
-#define SET_CPU_TEMP_CMD_LENGTH	9
+/* Offset in below command where channel (pump or fan) should be set and their values */
+#define SET_RPM_SPEED_CHANNEL_OFFSET	2
+#define SET_RPM_SPEED_CHANNEL_FAN	0x0101
+#define SET_RPM_SPEED_CHANNEL_PUMP	0x0402
+/* Offsets in below command where RPM should be set */
+static const u8 speed_cmd_offsets[] = { 5, 8, 11, 14 };
+static const u8 set_rpm_speed_cmd_template[] = {
+	0x99, 0xE6, 0, 0, 0, 0, 0, 0x1E, 0, 0, 0x32, 0, 0, 0x41, 0, 0
+};
+
+#define GET_STATUS_CMD_LENGTH		2
+#define SET_CPU_TEMP_CMD_LENGTH		9
+#define SET_RPM_SPEED_OFFSETS_LENGTH	4
+#define SET_RPM_SPEED_CMD_LENGTH	16
 
 static const char *const waterforce_temp_label[] = {
 	"Coolant temp",
@@ -116,7 +130,16 @@ static umode_t waterforce_is_visible(const void *data,
 		}
 		break;
 	case hwmon_fan:
-		return 0444;
+		switch (attr) {
+		case hwmon_fan_label:
+		case hwmon_fan_input:
+			return 0444;
+		case hwmon_fan_target:
+			return 0200;
+		default:
+			break;
+		}
+		break;
 	case hwmon_pwm:
 		switch (attr) {
 		case hwmon_pwm_input:
@@ -195,8 +218,25 @@ static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
 	memcpy(set_cpu_temp_cmd, set_cpu_temp_cmd_template, SET_CPU_TEMP_CMD_LENGTH);
 	set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
 
-	return waterforce_write_expanded(priv, set_cpu_temp_cmd,
-					 SET_CPU_TEMP_CMD_LENGTH);
+	return waterforce_write_expanded(priv, set_cpu_temp_cmd, SET_CPU_TEMP_CMD_LENGTH);
+}
+
+static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, long val)
+{
+	int i;
+	u8 set_rpm_speed_cmd[SET_RPM_SPEED_CMD_LENGTH];
+
+	if (val < MIN_FAN_RPM)
+		return -EINVAL;
+
+	memcpy(set_rpm_speed_cmd, set_rpm_speed_cmd_template, SET_RPM_SPEED_CMD_LENGTH);
+	set_rpm_speed_cmd[SET_RPM_SPEED_CHANNEL_OFFSET] =
+	    channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN : SET_RPM_SPEED_CHANNEL_PUMP;
+
+	for (i = 0; i < SET_RPM_SPEED_OFFSETS_LENGTH; i++)
+		put_unaligned_be16(val, set_rpm_speed_cmd + speed_cmd_offsets[i]);
+
+	return waterforce_write_expanded(priv, set_rpm_speed_cmd, SET_RPM_SPEED_CMD_LENGTH);
 }
 
 static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
@@ -209,6 +249,14 @@ static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u3
 		switch (attr) {
 		case hwmon_temp_input:
 			return waterforce_set_cpu_temp(priv, val);
+		default:
+			break;
+		}
+		break;
+	case hwmon_fan:
+		switch (attr) {
+		case hwmon_fan_target:
+			return waterforce_set_fan_speed(priv, channel, val);
 		default:
 			break;
 		}
@@ -232,8 +280,8 @@ static const struct hwmon_channel_info *waterforce_info[] = {
 			   HWMON_T_INPUT | HWMON_T_LABEL,
 			   HWMON_T_INPUT | HWMON_T_LABEL),
 	HWMON_CHANNEL_INFO(fan,
-			   HWMON_F_INPUT | HWMON_F_LABEL,
-			   HWMON_F_INPUT | HWMON_F_LABEL),
+			   HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET,
+			   HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET),
 	HWMON_CHANNEL_INFO(pwm,
 			   HWMON_PWM_INPUT,
 			   HWMON_PWM_INPUT),
