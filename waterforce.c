@@ -5,11 +5,14 @@
  * Copyright 2023 Aleksa Savic <savicaleksa83@gmail.com>
  */
 
-#include <asm/unaligned.h>
+#include <linux/debugfs.h>
 #include <linux/hid.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
+#include <asm/unaligned.h>
+
+#define DRIVER_NAME	"waterforce"
 
 #define USB_VENDOR_ID_GIGABYTE		0x1044
 #define USB_PRODUCT_ID_WATERFORCE_1	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
@@ -73,6 +76,7 @@ static const char *const waterforce_speed_label[] = {
 struct waterforce_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
+	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
 	struct completion fw_version_processed;
 
@@ -361,6 +365,36 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
+
+static int firmware_version_show(struct seq_file *seqf, void *unused)
+{
+	struct waterforce_data *priv = seqf->private;
+
+	seq_printf(seqf, "%u\n", priv->firmware_version);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(firmware_version);
+
+static void waterforce_debugfs_init(struct waterforce_data *priv)
+{
+	char name[64];
+
+	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME, dev_name(&priv->hdev->dev));
+
+	priv->debugfs = debugfs_create_dir(name, NULL);
+	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv, &firmware_version_fops);
+}
+
+#else
+
+static void waterforce_debugfs_init(struct waterforce_data *priv)
+{
+}
+
+#endif
+
 static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
 	struct waterforce_data *priv;
@@ -431,6 +465,8 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		priv->max_speed_rpm = LOWER_MAX_RPM;
 	else
 		priv->max_speed_rpm = DEFAULT_MAX_RPM;
+
+	waterforce_debugfs_init(priv);
 
 	return 0;
 
