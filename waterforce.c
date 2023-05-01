@@ -18,7 +18,11 @@
 
 #define STATUS_VALIDITY		2	/* seconds */
 #define MAX_REPORT_LENGTH	6144
+
+#define FIRMWARE_F14_VER	14
 #define MIN_FAN_RPM		750
+#define LOWER_MAX_RPM		2800
+#define DEFAULT_MAX_RPM		3200
 
 #define WATERFORCE_TEMP_SENSOR	0xD
 #define WATERFORCE_FAN_SPEED	0x02
@@ -30,6 +34,10 @@ DECLARE_COMPLETION(status_report_received);
 
 /* Control commands, inner offsets and lengths */
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
+
+#define FIRMWARE_VER_START_OFFSET_1	2
+#define FIRMWARE_VER_START_OFFSET_2	3
+static const u8 get_firmware_ver_cmd[] = { 0x99, 0xD6 };
 
 /* Offset in below command where CPU temp value should be set */
 #define SET_CPU_TEMP_CMD_OFFSET		3
@@ -47,6 +55,7 @@ static const u8 set_rpm_speed_cmd_template[] = {
 };
 
 #define GET_STATUS_CMD_LENGTH		2
+#define GET_FIRMWARE_VER_CMD_LENGTH	2
 #define SET_CPU_TEMP_CMD_LENGTH		9
 #define SET_RPM_SPEED_OFFSETS_LENGTH	4
 #define SET_RPM_SPEED_CMD_LENGTH	16
@@ -65,6 +74,7 @@ struct waterforce_data {
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct mutex buffer_lock;	/* For locking access to buffer */
+	struct completion fw_version_processed;
 
 	/* Sensor data */
 	s32 temp_input[1];
@@ -72,7 +82,8 @@ struct waterforce_data {
 	u8 duty_input[2];	/* Fan and pump duty in 0-100% */
 
 	u8 *buffer;
-
+	int firmware_version;
+	int max_speed_rpm;
 	unsigned long updated;	/* jiffies */
 };
 
@@ -208,6 +219,22 @@ static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types ty
 	return 0;
 }
 
+static int waterforce_get_fw_ver(struct hid_device *hdev)
+{
+	int ret;
+	struct waterforce_data *priv = hid_get_drvdata(hdev);
+
+	ret = waterforce_write_expanded(priv, get_firmware_ver_cmd, GET_FIRMWARE_VER_CMD_LENGTH);
+	if (ret < 0)
+		return ret;
+
+	if (!wait_for_completion_timeout
+	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+		return -ENODATA;
+
+	return 0;
+}
+
 static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
 {
 	int ret;
@@ -231,7 +258,7 @@ static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, l
 	int i, ret;
 	u8 set_rpm_speed_cmd[SET_RPM_SPEED_CMD_LENGTH];
 
-	if (val < MIN_FAN_RPM)
+	if (val < MIN_FAN_RPM || val > priv->max_speed_rpm)
 		return -EINVAL;
 
 	memcpy(set_rpm_speed_cmd, set_rpm_speed_cmd_template, SET_RPM_SPEED_CMD_LENGTH);
@@ -307,6 +334,14 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
 
+	if (data[0] == get_firmware_ver_cmd[0] && data[1] == get_firmware_ver_cmd[1]) {
+		/* Received a firmware version report */
+		priv->firmware_version =
+		    data[FIRMWARE_VER_START_OFFSET_1] * 10 + data[FIRMWARE_VER_START_OFFSET_2];
+		complete(&priv->fw_version_processed);
+		return 0;
+	}
+
 	if (data[0] != get_status_cmd[0] || data[1] != get_status_cmd[1]) {
 		/* Device returned improper data */
 		hid_err_once(priv->hdev, "firmware or device is possibly damaged\n");
@@ -373,6 +408,7 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	}
 
 	mutex_init(&priv->buffer_lock);
+	init_completion(&priv->fw_version_processed);
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "waterforce",
 							  priv, &waterforce_chip_info, NULL);
@@ -381,6 +417,20 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
 		goto fail_and_close;
 	}
+
+	hid_device_io_start(hdev);
+	ret = waterforce_get_fw_ver(hdev);
+	if (ret < 0) {
+		hid_err(hdev, "fw version request failed with %d\n", ret);
+		goto fail_and_close;
+	}
+	hid_device_io_stop(hdev);
+
+	if (priv->firmware_version != FIRMWARE_F14_VER &&
+	    hdev->product != USB_PRODUCT_ID_WATERFORCE_3)
+		priv->max_speed_rpm = LOWER_MAX_RPM;
+	else
+		priv->max_speed_rpm = DEFAULT_MAX_RPM;
 
 	return 0;
 
