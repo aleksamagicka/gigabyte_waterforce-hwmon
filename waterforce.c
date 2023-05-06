@@ -249,7 +249,6 @@ static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
 
 	memcpy(set_cpu_temp_cmd, set_cpu_temp_cmd_template, SET_CPU_TEMP_CMD_LENGTH);
 	set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
-
 	ret = waterforce_write_expanded(priv, set_cpu_temp_cmd, SET_CPU_TEMP_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
@@ -266,12 +265,13 @@ static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, l
 		return -EINVAL;
 
 	memcpy(set_rpm_speed_cmd, set_rpm_speed_cmd_template, SET_RPM_SPEED_CMD_LENGTH);
+	set_rpm_speed_cmd[SET_RPM_SPEED_CHANNEL_OFFSET+1] =
+	    channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN%256 : SET_RPM_SPEED_CHANNEL_PUMP%256;
 	set_rpm_speed_cmd[SET_RPM_SPEED_CHANNEL_OFFSET] =
-	    channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN : SET_RPM_SPEED_CHANNEL_PUMP;
+	    channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN/256 : SET_RPM_SPEED_CHANNEL_PUMP/256;
 
 	for (i = 0; i < SET_RPM_SPEED_OFFSETS_LENGTH; i++)
 		put_unaligned_be16(val, set_rpm_speed_cmd + speed_cmd_offsets[i]);
-
 	ret = waterforce_write_expanded(priv, set_rpm_speed_cmd, SET_RPM_SPEED_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
