@@ -266,8 +266,9 @@ static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, l
 		return -EINVAL;
 
 	memcpy(set_rpm_speed_cmd, set_rpm_speed_cmd_template, SET_RPM_SPEED_CMD_LENGTH);
-	set_rpm_speed_cmd[SET_RPM_SPEED_CHANNEL_OFFSET] =
-	    channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN : SET_RPM_SPEED_CHANNEL_PUMP;
+	/* Fill in the channel identifier */
+	put_unaligned_be16(channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN : SET_RPM_SPEED_CHANNEL_PUMP,
+			   set_rpm_speed_cmd + SET_RPM_SPEED_CHANNEL_OFFSET);
 
 	for (i = 0; i < SET_RPM_SPEED_OFFSETS_LENGTH; i++)
 		put_unaligned_be16(val, set_rpm_speed_cmd + speed_cmd_offsets[i]);
