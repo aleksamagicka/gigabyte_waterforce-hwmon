@@ -57,11 +57,18 @@ static const u8 set_rpm_speed_cmd_template[] = {
 	0x99, 0xE6, 0, 0, 0, 0, 0, 0x1E, 0, 0, 0x32, 0, 0, 0x41, 0, 0
 };
 
+/* Offset in below command where channel (pump or fan) should be set and their values */
+#define SET_FAN_MODE_CHANNEL_OFFSET	2
+#define SET_FAN_MODE_VAL_OFFSET		3
+static const u8 set_fan_mode_cmd_template[] = { 0x99, 0xE5, 0, 0 };
+
+/* Command lengths */
 #define GET_STATUS_CMD_LENGTH		2
 #define GET_FIRMWARE_VER_CMD_LENGTH	2
 #define SET_CPU_TEMP_CMD_LENGTH		9
 #define SET_RPM_SPEED_OFFSETS_LENGTH	4
 #define SET_RPM_SPEED_CMD_LENGTH	16
+#define SET_FAN_MODE_CMD_LENGTH		4
 
 static const char *const waterforce_temp_label[] = {
 	"Coolant temp",
@@ -159,6 +166,8 @@ static umode_t waterforce_is_visible(const void *data,
 		switch (attr) {
 		case hwmon_pwm_input:
 			return 0444;
+		case hwmon_pwm_enable:
+			return 0200;
 		default:
 			break;
 		}
@@ -280,6 +289,37 @@ static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, l
 	return 0;
 }
 
+static int waterforce_set_fan_mode(struct waterforce_data *priv, int channel, long val)
+{
+	int ret;
+	u8 set_fan_mode_cmd[SET_FAN_MODE_CMD_LENGTH];
+
+	/*
+	TODO: Conform to hwmon
+
+	0x00 balance
+	0x01 custom
+	0x02 default
+	0x04 max
+	0x05 performance
+	0x06 quiet
+	0x07 zero
+	*/
+
+	if (val < 0 || val > 7)
+		return -EINVAL;
+
+	memcpy(set_fan_mode_cmd, set_fan_mode_cmd_template, SET_FAN_MODE_CMD_LENGTH);
+	set_fan_mode_cmd[SET_FAN_MODE_CHANNEL_OFFSET] = channel + 1;
+	set_fan_mode_cmd[SET_FAN_MODE_VAL_OFFSET] = val;
+
+	ret = waterforce_write_expanded(priv, set_fan_mode_cmd, SET_FAN_MODE_CMD_LENGTH);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
 static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
 			    long val)
 {
@@ -298,6 +338,14 @@ static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u3
 		switch (attr) {
 		case hwmon_fan_target:
 			return waterforce_set_fan_speed(priv, channel, val);
+		default:
+			break;
+		}
+		break;
+	case hwmon_pwm:
+		switch (attr) {
+		case hwmon_pwm_enable:
+			return waterforce_set_fan_mode(priv, channel, val);
 		default:
 			break;
 		}
@@ -324,8 +372,8 @@ static const struct hwmon_channel_info *waterforce_info[] = {
 			   HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET,
 			   HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET),
 	HWMON_CHANNEL_INFO(pwm,
-			   HWMON_PWM_INPUT,
-			   HWMON_PWM_INPUT),
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE),
 	NULL
 };
 
