@@ -505,6 +505,7 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	hid_device_io_start(hdev);
 	ret = waterforce_get_fw_ver(hdev);
 	if (ret < 0) {
+		ret = -ENODEV;
 		hid_err(hdev, "fw version request failed with %d\n", ret);
 		goto fail_and_close;
 	}
