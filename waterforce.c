@@ -82,6 +82,7 @@ static const char *const waterforce_speed_label[] = {
 };
 
 struct waterforce_data {
+	int kind;
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
@@ -123,10 +124,32 @@ static int waterforce_get_status(struct waterforce_data *priv)
 
 	reinit_completion(&status_report_received);
 
-	/* Send command for getting status */
-	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
+	if (priv->kind == 1)
+	{
+		mutex_lock(&priv->buffer_lock);
+
+		memset(priv->buffer, 0x00, MAX_REPORT_LENGTH);
+		//memcpy(priv->buffer, cmd, cmd_length);
+		priv->buffer[0] = 0x09;
+		priv->buffer[1] = 0xd8;
+		//ret = hid_hw_raw_request(priv->hdev, 0, priv->buffer, 8,
+		//		 HID_OUTPUT_REPORT, HID_REQ_GET_REPORT);
+		ret = hid_hw_output_report(priv->hdev, priv->buffer, 8);
+
+		mutex_unlock(&priv->buffer_lock);
+
+		for (int i = 0; i < 8; i++)
+			hid_err(priv->hdev, "dohvatio ga, %d\n", priv->buffer[i]);
+	}
+	else
+	{
+		/* Send command for getting status */
+		ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
+	}
+
 	if (ret < 0)
-		return ret;
+			return ret;
+
 
 	if (!wait_for_completion_timeout
 	    (&status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
@@ -388,6 +411,9 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
 
+	for (int i = 0; i < 8; i++)
+		hid_err(priv->hdev, "DOBIO GA %d\n", data[i]);
+
 	if (data[0] == get_firmware_ver_cmd[0] && data[1] == get_firmware_ver_cmd[1]) {
 		/* Received a firmware version report */
 		priv->firmware_version =
@@ -422,6 +448,11 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 	struct waterforce_data *priv = seqf->private;
 
 	seq_printf(seqf, "%u\n", priv->firmware_version);
+	for (int i = 0; i < MAX_REPORT_LENGTH; i++)
+	{
+		seq_printf(seqf, "%d", priv->buffer[i]);
+	}
+	seq_printf(seqf, "\n");
 
 	return 0;
 }
@@ -502,14 +533,20 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		goto fail_and_close;
 	}
 
-	hid_device_io_start(hdev);
-	ret = waterforce_get_fw_ver(hdev);
-	if (ret < 0) {
-		ret = -ENODEV;
-		hid_err(hdev, "fw version request failed with %d\n", ret);
-		goto fail_and_close;
+	if (hdev->product != USB_PRODUCT_ID_WATERFORCE_4) {
+		hid_device_io_start(hdev);
+		ret = waterforce_get_fw_ver(hdev);
+		if (ret < 0) {
+			ret = -ENODEV;
+			hid_err(hdev, "fw version request failed with %d\n", ret);
+			goto fail_and_close;
+		}
+		hid_device_io_stop(hdev);
 	}
-	hid_device_io_stop(hdev);
+	else
+	{
+		priv->kind = 1;
+	}
 
 	if (priv->firmware_version != FIRMWARE_F14_VER &&
 	    hdev->product != USB_PRODUCT_ID_WATERFORCE_3)
