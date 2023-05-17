@@ -12,16 +12,20 @@
 #include <linux/module.h>
 #include <asm/unaligned.h>
 
+enum kinds { x_variant, non_x_variant };
+
 #define DRIVER_NAME	"waterforce"
 
 #define USB_VENDOR_ID_GIGABYTE		0x1044
 #define USB_PRODUCT_ID_WATERFORCE_1	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
 #define USB_PRODUCT_ID_WATERFORCE_2	0x7a52	/* Gigabyte AORUS WATERFORCE X 360G */
 #define USB_PRODUCT_ID_WATERFORCE_3	0x7a53	/* Gigabyte AORUS WATERFORCE EX 360 */
-#define USB_PRODUCT_ID_WATERFORCE_4	0x7a51	/* Gigabyte AORUS WATERFORCE 240 */
+#define USB_PRODUCT_ID_WATERFORCE_4	0x7a51	/* Gigabyte AORUS WATERFORCE (240, 280, 360) */
 
 #define STATUS_VALIDITY		2	/* seconds */
-#define MAX_REPORT_LENGTH	6144
+#define X_REPORT_SIZE		6144
+#define NON_X_REPORT_ID		0
+#define NON_X_REPORT_SIZE	8
 
 #define FIRMWARE_F14_VER	14
 #define MIN_FAN_RPM		750
@@ -37,11 +41,13 @@
 DECLARE_COMPLETION(status_report_received);
 
 /* Control commands, inner offsets and lengths */
-static const u8 get_status_cmd[] = { 0x99, 0xDA };
+static const u8 x_get_status_cmd[] = { 0x99, 0xDA };
+static const u8 non_x_get_status_cmd[] = { 0xD8 };
 
 #define FIRMWARE_VER_START_OFFSET_1	2
 #define FIRMWARE_VER_START_OFFSET_2	3
-static const u8 get_firmware_ver_cmd[] = { 0x99, 0xD6 };
+static const u8 x_get_firmware_ver_cmd[] = { 0x99, 0xD6 };
+static const u8 non_x_get_firmware_ver_cmd[] = { 0xD6 };
 
 /* Offset in below command where CPU temp value should be set */
 #define SET_CPU_TEMP_CMD_OFFSET		3
@@ -64,12 +70,14 @@ static const u8 set_rpm_speed_cmd_template[] = {
 static const u8 set_fan_mode_cmd_template[] = { 0x99, 0xE5, 0, 0 };
 
 /* Command lengths */
-#define GET_STATUS_CMD_LENGTH		2
-#define GET_FIRMWARE_VER_CMD_LENGTH	2
-#define SET_CPU_TEMP_CMD_LENGTH		9
-#define SET_RPM_SPEED_OFFSETS_LENGTH	4
-#define SET_RPM_SPEED_CMD_LENGTH	16
-#define SET_FAN_MODE_CMD_LENGTH		4
+#define X_GET_STATUS_CMD_LENGTH			2
+#define NON_X_GET_STATUS_CMD_LENGTH		1
+#define X_GET_FIRMWARE_VER_CMD_LENGTH		2
+#define NON_X_GET_FIRMWARE_VER_CMD_LENGTH	1
+#define SET_CPU_TEMP_CMD_LENGTH			9
+#define SET_RPM_SPEED_OFFSETS_LENGTH		4
+#define SET_RPM_SPEED_CMD_LENGTH		16
+#define SET_FAN_MODE_CMD_LENGTH			4
 
 static const char *const waterforce_temp_label[] = {
 	"Coolant temp",
@@ -82,6 +90,7 @@ static const char *const waterforce_speed_label[] = {
 };
 
 struct waterforce_data {
+	enum kinds kind;
 	struct hid_device *hdev;
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
@@ -94,6 +103,7 @@ struct waterforce_data {
 	u8 duty_input[2];	/* Fan and pump duty in 0-100% */
 
 	u8 *buffer;
+	int buffer_size;
 	int firmware_version;
 	int max_speed_rpm;
 	unsigned long updated;	/* jiffies */
@@ -109,10 +119,32 @@ static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd
 
 	mutex_lock(&priv->buffer_lock);
 
-	memset(priv->buffer, 0x00, MAX_REPORT_LENGTH);
+	memset(priv->buffer, 0x00, priv->buffer_size);
 	memcpy(priv->buffer, cmd, cmd_length);
-	ret = hid_hw_output_report(priv->hdev, priv->buffer, MAX_REPORT_LENGTH);
+	ret = hid_hw_output_report(priv->hdev, priv->buffer, priv->buffer_size);
 
+	mutex_unlock(&priv->buffer_lock);
+	return ret;
+}
+
+static int waterforce_non_x_write(struct waterforce_data *priv, const u8 *cmd, int cmd_length)
+{
+	int ret;
+	mutex_lock(&priv->buffer_lock);
+
+	/* Request result by writing to the command with the report ID */
+	memset(priv->buffer, 0x00, priv->buffer_size);
+	memcpy(priv->buffer, cmd, cmd_length);
+	ret = hid_hw_raw_request(priv->hdev, NON_X_REPORT_ID, priv->buffer, NON_X_REPORT_SIZE,
+				 HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+	if (ret < 0)
+		goto unlock_and_return;
+
+	/* Now read the results, using the same ID */
+	memset(priv->buffer, 0x00, priv->buffer_size);
+	ret = hid_hw_raw_request(priv->hdev, NON_X_REPORT_ID, priv->buffer, NON_X_REPORT_SIZE,
+				 HID_FEATURE_REPORT, HID_REQ_GET_REPORT);
+unlock_and_return:
 	mutex_unlock(&priv->buffer_lock);
 	return ret;
 }
@@ -121,16 +153,29 @@ static int waterforce_get_status(struct waterforce_data *priv)
 {
 	int ret;
 
-	reinit_completion(&status_report_received);
+	if (priv->kind == non_x_variant) {
+		ret =
+		    waterforce_non_x_write(priv, non_x_get_status_cmd, NON_X_GET_STATUS_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
 
-	/* Send command for getting status */
-	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
-	if (ret < 0)
-		return ret;
+		// TODO: Move offsets to macros
+		priv->speed_input[0] = get_unaligned_be16(priv->buffer + 2);
+		priv->speed_input[1] = get_unaligned_be16(priv->buffer + 4);
 
-	if (!wait_for_completion_timeout
-	    (&status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
-		return -ENODATA;
+		priv->updated = jiffies;
+	} else {
+		reinit_completion(&status_report_received);
+
+		/* Send command for getting status */
+		ret = waterforce_write_expanded(priv, x_get_status_cmd, X_GET_STATUS_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
+
+		if (!wait_for_completion_timeout
+		    (&status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+			return -ENODATA;
+	}
 
 	return 0;
 }
@@ -138,16 +183,23 @@ static int waterforce_get_status(struct waterforce_data *priv)
 static umode_t waterforce_is_visible(const void *data,
 				     enum hwmon_sensor_types type, u32 attr, int channel)
 {
+	const struct waterforce_data *priv = data;
+
 	switch (type) {
 	case hwmon_temp:
 		switch (attr) {
 		case hwmon_temp_label:
-			return 0444;
+			/* Non-X variants don't seem to possess a liquid temp sensor */
+			if ((priv->kind == non_x_variant && channel == 1) || channel < 2)
+				return 0444;
+			break;
 		case hwmon_temp_input:
 			/* Special case to enable writing custom temp value to device, write only */
 			if (channel == 1)
 				return 0200;
-			return 0444;
+			if (priv->kind != non_x_variant && channel == 0)
+				return 0444;
+			break;
 		default:
 			break;
 		}
@@ -238,13 +290,26 @@ static int waterforce_get_fw_ver(struct hid_device *hdev)
 	int ret;
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
 
-	ret = waterforce_write_expanded(priv, get_firmware_ver_cmd, GET_FIRMWARE_VER_CMD_LENGTH);
-	if (ret < 0)
-		return ret;
+	if (priv->kind == x_variant) {
+		ret =
+		    waterforce_write_expanded(priv, x_get_firmware_ver_cmd,
+					      X_GET_FIRMWARE_VER_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
 
-	if (!wait_for_completion_timeout
-	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
-		return -ENODATA;
+		if (!wait_for_completion_timeout
+		    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+			return -ENODATA;
+	} else {
+		ret =
+		    waterforce_non_x_write(priv, non_x_get_firmware_ver_cmd,
+					   NON_X_GET_FIRMWARE_VER_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
+
+		priv->firmware_version = priv->buffer[FIRMWARE_VER_START_OFFSET_1] * 10
+		    + priv->buffer[FIRMWARE_VER_START_OFFSET_2];
+	}
 
 	return 0;
 }
@@ -296,16 +361,16 @@ static int waterforce_set_fan_mode(struct waterforce_data *priv, int channel, lo
 	u8 set_fan_mode_cmd[SET_FAN_MODE_CMD_LENGTH];
 
 	/*
-	TODO: Conform to hwmon
+	   TODO: Conform to hwmon
 
-	0x00 balance
-	0x01 custom
-	0x02 default
-	0x04 max
-	0x05 performance
-	0x06 quiet
-	0x07 zero
-	*/
+	   0x00 balance
+	   0x01 custom
+	   0x02 default
+	   0x04 max
+	   0x05 performance
+	   0x06 quiet
+	   0x07 zero
+	 */
 
 	if (val < 0 || val > 7)
 		return -EINVAL;
@@ -388,7 +453,7 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
 
-	if (data[0] == get_firmware_ver_cmd[0] && data[1] == get_firmware_ver_cmd[1]) {
+	if (data[0] == x_get_firmware_ver_cmd[0] && data[1] == x_get_firmware_ver_cmd[1]) {
 		/* Received a firmware version report */
 		priv->firmware_version =
 		    data[FIRMWARE_VER_START_OFFSET_1] * 10 + data[FIRMWARE_VER_START_OFFSET_2];
@@ -396,7 +461,7 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		return 0;
 	}
 
-	if (data[0] != get_status_cmd[0] || data[1] != get_status_cmd[1]) {
+	if (data[0] != x_get_status_cmd[0] || data[1] != x_get_status_cmd[1]) {
 		/* Device returned improper data */
 		hid_err_once(priv->hdev, "firmware or device is possibly damaged\n");
 		return 0;
@@ -470,6 +535,19 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		return ret;
 	}
 
+	if (hdev->product == USB_PRODUCT_ID_WATERFORCE_4) {
+		priv->kind = non_x_variant;
+		priv->buffer_size = NON_X_REPORT_SIZE;
+	} else {
+		priv->kind = x_variant;
+		priv->buffer_size = X_REPORT_SIZE;
+	}
+
+	/* Discard the two other devices that we aren't interested in */
+	if (priv->kind == non_x_variant
+	    && (hdev->type != HID_TYPE_USBNONE || hdev->collection[0].usage % 3 != 0))
+		return -ENODEV;
+
 	/*
 	 * Enable hidraw so existing user-space tools can continue to work.
 	 */
@@ -485,7 +563,7 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		goto fail_and_close;
 	}
 
-	priv->buffer = devm_kzalloc(&hdev->dev, MAX_REPORT_LENGTH, GFP_KERNEL);
+	priv->buffer = devm_kzalloc(&hdev->dev, priv->buffer_size, GFP_KERNEL);
 	if (!priv->buffer) {
 		ret = -ENOMEM;
 		goto fail_and_close;
@@ -510,6 +588,8 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		goto fail_and_close;
 	}
 	hid_device_io_stop(hdev);
+
+	hid_err(priv->hdev, "fw ver: %d\n", priv->firmware_version);
 
 	if (priv->firmware_version != FIRMWARE_F14_VER &&
 	    hdev->product != USB_PRODUCT_ID_WATERFORCE_3)
