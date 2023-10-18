@@ -97,10 +97,7 @@ struct waterforce_data {
 	unsigned long updated;	/* jiffies */
 };
 
-/*
- * Writes the command to the device with the rest of the report (up to 64 bytes) filled
- * with zeroes.
- */
+/* Writes the command to the device with the rest of the report filled with zeroes */
 static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd, int cmd_length)
 {
 	int ret;
