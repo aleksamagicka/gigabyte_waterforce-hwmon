@@ -10,6 +10,7 @@
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
+#include <linux/spinlock.h>
 #include <asm/unaligned.h>
 
 #define DRIVER_NAME	"gigabyte_waterforce"
@@ -17,7 +18,7 @@
 #define USB_VENDOR_ID_GIGABYTE		0x1044
 #define USB_PRODUCT_ID_WATERFORCE	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
 
-#define STATUS_VALIDITY		2	/* seconds */
+#define STATUS_VALIDITY		(2 * 1000)	/* ms */
 #define MAX_REPORT_LENGTH	6144
 
 #define WATERFORCE_TEMP_SENSOR	0xD
@@ -51,6 +52,10 @@ struct waterforce_data {
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
+	/* For queueing multiple readers */
+	struct mutex status_report_request_mutex;
+	/* For reinitializing the completion below */
+	spinlock_t status_report_request_lock;
 	struct completion status_report_received;
 	struct completion fw_version_processed;
 
@@ -83,16 +88,37 @@ static int waterforce_get_status(struct waterforce_data *priv)
 {
 	int ret;
 
-	reinit_completion(&priv->status_report_received);
+	if (!mutex_lock_interruptible(&priv->status_report_request_mutex)) {
+		if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
+			/* Data is up to date */
+			goto unlock_and_return;
+		}
 
-	/* Send command for getting status */
-	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
-	if (ret < 0)
-		return ret;
+		/*
+		 * Disable raw event parsing for a moment to safely reinitialize the
+		 * completion. Reinit is done because hidraw could have triggered
+		 * the raw event parsing and marked the priv->status_report_received
+		 * completion as done.
+		 */
+		spin_lock_bh(&priv->status_report_request_lock);
+		reinit_completion(&priv->status_report_received);
+		spin_unlock_bh(&priv->status_report_request_lock);
 
-	if (wait_for_completion_interruptible_timeout
-	    (&priv->status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)) <= 0)
+		/* Send command for getting status */
+		ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
+		if (ret < 0)
+			return ret;
+
+		if (wait_for_completion_interruptible_timeout
+		    (&priv->status_report_received, msecs_to_jiffies(STATUS_VALIDITY)) <= 0)
+			ret = -ENODATA;
+unlock_and_return:
+		mutex_unlock(&priv->status_report_request_mutex);
+		if (ret < 0)
+			return ret;
+	} else {
 		return -ENODATA;
+	}
 
 	return 0;
 }
@@ -140,7 +166,7 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 	int ret;
 	struct waterforce_data *priv = dev_get_drvdata(dev);
 
-	if (time_after(jiffies, priv->updated + STATUS_VALIDITY * HZ)) {
+	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
 		/* Request status on demand */
 		ret = waterforce_get_status(priv);
 		if (ret < 0)
@@ -197,7 +223,7 @@ static int waterforce_get_fw_ver(struct hid_device *hdev)
 		return ret;
 
 	if (wait_for_completion_interruptible_timeout
-	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY * 1000)) <= 0)
+	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY)) <= 0)
 		return -ENODATA;
 
 	return 0;
@@ -251,7 +277,7 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	priv->duty_input[0] = data[WATERFORCE_FAN_DUTY];
 	priv->duty_input[1] = data[WATERFORCE_PUMP_DUTY];
 
-	complete(&priv->status_report_received);
+	complete_all(&priv->status_report_received);
 
 	priv->updated = jiffies;
 
@@ -301,11 +327,11 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	hid_set_drvdata(hdev, priv);
 
 	/*
-	 * Initialize ->updated to STATUS_VALIDITY seconds in the past, making
-	 * the initial empty data invalid for waterforce_read without the need for
+	 * Initialize priv->updated to STATUS_VALIDITY seconds in the past, making
+	 * the initial empty data invalid for waterforce_read() without the need for
 	 * a special case there.
 	 */
-	priv->updated = jiffies - STATUS_VALIDITY * HZ;
+	priv->updated = jiffies - msecs_to_jiffies(STATUS_VALIDITY);
 
 	ret = hid_parse(hdev);
 	if (ret) {
@@ -334,7 +360,9 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		goto fail_and_close;
 	}
 
+	mutex_init(&priv->status_report_request_mutex);
 	mutex_init(&priv->buffer_lock);
+	spin_lock_init(&priv->status_report_request_lock);
 	init_completion(&priv->status_report_received);
 	init_completion(&priv->fw_version_processed);
 
