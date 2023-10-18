@@ -241,8 +241,8 @@ static int waterforce_get_fw_ver(struct hid_device *hdev)
 	if (ret < 0)
 		return ret;
 
-	if (!wait_for_completion_timeout
-	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+	if (wait_for_completion_interruptible_timeout
+	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY * 1000)) <= 0)
 		return -ENODATA;
 
 	return 0;
@@ -391,7 +391,7 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		/* Received a firmware version report */
 		priv->firmware_version =
 		    data[FIRMWARE_VER_START_OFFSET_1] * 10 + data[FIRMWARE_VER_START_OFFSET_2];
-		complete(&priv->fw_version_processed);
+		complete_all(&priv->fw_version_processed);
 		return 0;
 	}
 
