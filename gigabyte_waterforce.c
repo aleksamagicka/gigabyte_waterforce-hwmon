@@ -20,11 +20,6 @@
 #define STATUS_VALIDITY		2	/* seconds */
 #define MAX_REPORT_LENGTH	6144
 
-#define FIRMWARE_F14_VER	14
-#define MIN_FAN_RPM		750
-#define LOWER_MAX_RPM		2800
-#define DEFAULT_MAX_RPM		3200
-
 #define WATERFORCE_TEMP_SENSOR	0xD
 #define WATERFORCE_FAN_SPEED	0x02
 #define WATERFORCE_PUMP_SPEED	0x05
@@ -38,37 +33,12 @@ static const u8 get_status_cmd[] = { 0x99, 0xDA };
 #define FIRMWARE_VER_START_OFFSET_2	3
 static const u8 get_firmware_ver_cmd[] = { 0x99, 0xD6 };
 
-/* Offset in below command where CPU temp value should be set */
-#define SET_CPU_TEMP_CMD_OFFSET		3
-/* Sample command portraying 16c/32t, 5.5GHz CPU */
-static const u8 set_cpu_temp_cmd_template[] = { 0x99, 0xE0, 0, 0, 0x20, 0x05, 0x05, 0x10, 0x30 };
-
-/* Offset in below command where channel (pump or fan) should be set and their values */
-#define SET_RPM_SPEED_CHANNEL_OFFSET	2
-#define SET_RPM_SPEED_CHANNEL_FAN	0x0101
-#define SET_RPM_SPEED_CHANNEL_PUMP	0x0402
-/* Offsets in below command where RPM should be set */
-static const u8 speed_cmd_offsets[] = { 5, 8, 11, 14 };
-static const u8 set_rpm_speed_cmd_template[] = {
-	0x99, 0xE6, 0, 0, 0, 0, 0, 0x1E, 0, 0, 0x32, 0, 0, 0x41, 0, 0
-};
-
-/* Offset in below command where channel (pump or fan) should be set and their values */
-#define SET_FAN_MODE_CHANNEL_OFFSET	2
-#define SET_FAN_MODE_VAL_OFFSET		3
-static const u8 set_fan_mode_cmd_template[] = { 0x99, 0xE5, 0, 0 };
-
 /* Command lengths */
 #define GET_STATUS_CMD_LENGTH		2
 #define GET_FIRMWARE_VER_CMD_LENGTH	2
-#define SET_CPU_TEMP_CMD_LENGTH		9
-#define SET_RPM_SPEED_OFFSETS_LENGTH	4
-#define SET_RPM_SPEED_CMD_LENGTH	16
-#define SET_FAN_MODE_CMD_LENGTH		4
 
 static const char *const waterforce_temp_label[] = {
-	"Coolant temp",
-	"User provided CPU temp"
+	"Coolant temp"
 };
 
 static const char *const waterforce_speed_label[] = {
@@ -91,7 +61,6 @@ struct waterforce_data {
 
 	u8 *buffer;
 	int firmware_version;
-	int max_speed_rpm;
 	unsigned long updated;	/* jiffies */
 };
 
@@ -135,11 +104,7 @@ static umode_t waterforce_is_visible(const void *data,
 	case hwmon_temp:
 		switch (attr) {
 		case hwmon_temp_label:
-			return 0444;
 		case hwmon_temp_input:
-			/* Special case to enable writing custom temp value to device, write only */
-			if (channel == 1)
-				return 0200;
 			return 0444;
 		default:
 			break;
@@ -150,8 +115,6 @@ static umode_t waterforce_is_visible(const void *data,
 		case hwmon_fan_label:
 		case hwmon_fan_input:
 			return 0444;
-		case hwmon_fan_target:
-			return 0200;
 		default:
 			break;
 		}
@@ -160,8 +123,6 @@ static umode_t waterforce_is_visible(const void *data,
 		switch (attr) {
 		case hwmon_pwm_input:
 			return 0444;
-		case hwmon_pwm_enable:
-			return 0200;
 		default:
 			break;
 		}
@@ -242,132 +203,21 @@ static int waterforce_get_fw_ver(struct hid_device *hdev)
 	return 0;
 }
 
-static int waterforce_set_cpu_temp(struct waterforce_data *priv, long val)
-{
-	int ret;
-	u8 set_cpu_temp_cmd[SET_CPU_TEMP_CMD_LENGTH];
-
-	if (val < 0 || val > 255)
-		return -EINVAL;
-
-	memcpy(set_cpu_temp_cmd, set_cpu_temp_cmd_template, SET_CPU_TEMP_CMD_LENGTH);
-	set_cpu_temp_cmd[SET_CPU_TEMP_CMD_OFFSET] = val;
-
-	ret = waterforce_write_expanded(priv, set_cpu_temp_cmd, SET_CPU_TEMP_CMD_LENGTH);
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-
-static int waterforce_set_fan_speed(struct waterforce_data *priv, int channel, long val)
-{
-	int i, ret;
-	u8 set_rpm_speed_cmd[SET_RPM_SPEED_CMD_LENGTH];
-
-	if (val < MIN_FAN_RPM || val > priv->max_speed_rpm)
-		return -EINVAL;
-
-	memcpy(set_rpm_speed_cmd, set_rpm_speed_cmd_template, SET_RPM_SPEED_CMD_LENGTH);
-	/* Fill in the channel identifier */
-	put_unaligned_be16(channel == 0 ? SET_RPM_SPEED_CHANNEL_FAN : SET_RPM_SPEED_CHANNEL_PUMP,
-			   set_rpm_speed_cmd + SET_RPM_SPEED_CHANNEL_OFFSET);
-
-	for (i = 0; i < SET_RPM_SPEED_OFFSETS_LENGTH; i++)
-		put_unaligned_be16(val, set_rpm_speed_cmd + speed_cmd_offsets[i]);
-
-	ret = waterforce_write_expanded(priv, set_rpm_speed_cmd, SET_RPM_SPEED_CMD_LENGTH);
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-
-static int waterforce_set_fan_mode(struct waterforce_data *priv, int channel, long val)
-{
-	int ret;
-	u8 set_fan_mode_cmd[SET_FAN_MODE_CMD_LENGTH];
-
-	/*
-	TODO: Conform to hwmon
-
-	0x00 balance
-	0x01 custom
-	0x02 default
-	0x04 max
-	0x05 performance
-	0x06 quiet
-	0x07 zero
-	*/
-
-	if (val < 0 || val > 7)
-		return -EINVAL;
-
-	memcpy(set_fan_mode_cmd, set_fan_mode_cmd_template, SET_FAN_MODE_CMD_LENGTH);
-	set_fan_mode_cmd[SET_FAN_MODE_CHANNEL_OFFSET] = channel + 1;
-	set_fan_mode_cmd[SET_FAN_MODE_VAL_OFFSET] = val;
-
-	ret = waterforce_write_expanded(priv, set_fan_mode_cmd, SET_FAN_MODE_CMD_LENGTH);
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-
-static int waterforce_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
-			    long val)
-{
-	struct waterforce_data *priv = dev_get_drvdata(dev);
-
-	switch (type) {
-	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_input:
-			return waterforce_set_cpu_temp(priv, val);
-		default:
-			break;
-		}
-		break;
-	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_target:
-			return waterforce_set_fan_speed(priv, channel, val);
-		default:
-			break;
-		}
-		break;
-	case hwmon_pwm:
-		switch (attr) {
-		case hwmon_pwm_enable:
-			return waterforce_set_fan_mode(priv, channel, val);
-		default:
-			break;
-		}
-		break;
-	default:
-		return -EOPNOTSUPP;
-	}
-
-	return 0;
-}
-
 static const struct hwmon_ops waterforce_hwmon_ops = {
 	.is_visible = waterforce_is_visible,
 	.read = waterforce_read,
-	.read_string = waterforce_read_string,
-	.write = waterforce_write
+	.read_string = waterforce_read_string
 };
 
 static const struct hwmon_channel_info *waterforce_info[] = {
 	HWMON_CHANNEL_INFO(temp,
-			   HWMON_T_INPUT | HWMON_T_LABEL,
 			   HWMON_T_INPUT | HWMON_T_LABEL),
 	HWMON_CHANNEL_INFO(fan,
-			   HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET,
-			   HWMON_F_INPUT | HWMON_F_LABEL | HWMON_F_TARGET),
+			   HWMON_F_INPUT | HWMON_F_LABEL,
+			   HWMON_F_INPUT | HWMON_F_LABEL),
 	HWMON_CHANNEL_INFO(pwm,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
-			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE),
+			   HWMON_PWM_INPUT,
+			   HWMON_PWM_INPUT),
 	NULL
 };
 
@@ -503,11 +353,6 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		goto fail_and_close;
 	}
 	hid_device_io_stop(hdev);
-
-	if (priv->firmware_version != FIRMWARE_F14_VER)
-		priv->max_speed_rpm = LOWER_MAX_RPM;
-	else
-		priv->max_speed_rpm = DEFAULT_MAX_RPM;
 
 	waterforce_debugfs_init(priv);
 
