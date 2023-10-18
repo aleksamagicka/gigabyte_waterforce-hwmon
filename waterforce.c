@@ -100,7 +100,7 @@ struct waterforce_data {
 
 /*
  * Writes the command to the device with the rest of the report (up to 64 bytes) filled
- * with zeroes
+ * with zeroes.
  */
 static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd, int cmd_length)
 {
@@ -563,9 +563,7 @@ static void __exit waterforce_exit(void)
 	hid_unregister_driver(&waterforce_driver);
 }
 
-/*
- * When compiled into the kernel, initialize after the hid bus.
- */
+/* When compiled into the kernel, initialize after the HID bus */
 late_initcall(waterforce_init);
 module_exit(waterforce_exit);
 
