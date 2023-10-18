@@ -33,8 +33,6 @@
 #define WATERFORCE_FAN_DUTY	0x08
 #define WATERFORCE_PUMP_DUTY	0x09
 
-DECLARE_COMPLETION(status_report_received);
-
 /* Control commands, inner offsets and lengths */
 static const u8 get_status_cmd[] = { 0x99, 0xDA };
 
@@ -85,6 +83,7 @@ struct waterforce_data {
 	struct device *hwmon_dev;
 	struct dentry *debugfs;
 	struct mutex buffer_lock;	/* For locking access to buffer */
+	struct completion status_report_received;
 	struct completion fw_version_processed;
 
 	/* Sensor data */
@@ -120,15 +119,15 @@ static int waterforce_get_status(struct waterforce_data *priv)
 {
 	int ret;
 
-	reinit_completion(&status_report_received);
+	reinit_completion(&priv->status_report_received);
 
 	/* Send command for getting status */
 	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
 	if (ret < 0)
 		return ret;
 
-	if (!wait_for_completion_timeout
-	    (&status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)))
+	if (wait_for_completion_interruptible_timeout
+	    (&priv->status_report_received, msecs_to_jiffies(STATUS_VALIDITY * 1000)) <= 0)
 		return -ENODATA;
 
 	return 0;
@@ -407,7 +406,7 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	priv->duty_input[0] = data[WATERFORCE_FAN_DUTY];
 	priv->duty_input[1] = data[WATERFORCE_PUMP_DUTY];
 
-	complete(&status_report_received);
+	complete(&priv->status_report_received);
 
 	priv->updated = jiffies;
 
@@ -491,6 +490,7 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	}
 
 	mutex_init(&priv->buffer_lock);
+	init_completion(&priv->status_report_received);
 	init_completion(&priv->fw_version_processed);
 
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "waterforce",
