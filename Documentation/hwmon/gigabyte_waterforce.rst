@@ -34,14 +34,14 @@ Sysfs entries
 -------------
 
 =========== =============================================
-fan1_input  Pump speed (in rpm)
-fan2_input  Fan speed (in rpm)
+fan1_input  Fan speed (in rpm)
+fan2_input  Pump speed (in rpm)
 temp1_input Coolant temperature (in millidegrees Celsius)
 =========== =============================================
 
 Debugfs entries
 ---------------
 
-================ =============================================
+================ =======================
 firmware_version Device firmware version
-================ =============================================
+================ =======================
