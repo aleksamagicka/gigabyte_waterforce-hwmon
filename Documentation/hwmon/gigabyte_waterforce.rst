@@ -1,6 +1,6 @@
  .. SPDX-License-Identifier: GPL-2.0-or-later
 
-Kernel driver gigabyte-waterforce
+Kernel driver gigabyte_waterforce
 =================================
 
 Supported devices:
@@ -15,8 +15,11 @@ Description
 -----------
 
 This driver enables hardware monitoring support for the listed Gigabyte Waterforce
-all-in-one CPU liquid coolers. They expose liquid temperature, as well as pump and
-fan speed in RPM.
+all-in-one CPU liquid coolers. Available sensors are pump and fan speed in RPM, as
+well as coolant temperature. Also available through debugfs is the firmware version.
+
+Attaching a fan is optional and allows it to be controlled from the device. If
+it's not connected, the fan-related sensors will report zeroes.
 
 The addressable RGB LEDs and LCD screen are not supported in this driver and should
 be controlled through userspace tools.
@@ -35,3 +38,10 @@ fan1_input  Pump speed (in rpm)
 fan2_input  Fan speed (in rpm)
 temp1_input Coolant temperature (in millidegrees Celsius)
 =========== =============================================
+
+Debugfs entries
+---------------
+
+================ =============================================
+firmware_version Device firmware version
+================ =============================================
