@@ -3,7 +3,7 @@
 # external KDIR specification is supported
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-SOURCES := waterforce.c
+SOURCES := gigabyte_waterforce.c
 
 all: modules
 
@@ -18,5 +18,5 @@ checkpatch:
 dev:
 	make clean
 	make
-	sudo rmmod waterforce || true
-	sudo insmod waterforce.ko
+	sudo rmmod gigabyte_waterforce || true
+	sudo insmod gigabyte_waterforce.ko

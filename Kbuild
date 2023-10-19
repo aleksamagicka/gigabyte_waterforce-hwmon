@@ -1,1 +1,1 @@
-obj-m := waterforce.o
+obj-m := gigabyte_waterforce.o
