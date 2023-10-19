@@ -3,7 +3,7 @@
 # external KDIR specification is supported
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-SOURCES := gigabyte_waterforce.c
+SOURCES := drivers/hwmon/gigabyte_waterforce.c
 
 all: modules
 
@@ -19,4 +19,4 @@ dev:
 	make clean
 	make
 	sudo rmmod gigabyte_waterforce || true
-	sudo insmod gigabyte_waterforce.ko
+	sudo insmod drivers/hwmon/gigabyte_waterforce.ko

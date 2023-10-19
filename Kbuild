@@ -1,1 +1,1 @@
-obj-m := gigabyte_waterforce.o
+obj-m := drivers/hwmon/gigabyte_waterforce.o
