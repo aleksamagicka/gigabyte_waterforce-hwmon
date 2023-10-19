@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * hwmon driver for Gigabyte AORUS Waterforce AIO coolers
+ * hwmon driver for Gigabyte AORUS Waterforce AIO CPU coolers: X240, X280 and X360.
  *
  * Copyright 2023 Aleksa Savic <savicaleksa83@gmail.com>
  */
@@ -16,7 +16,7 @@
 #define DRIVER_NAME	"gigabyte_waterforce"
 
 #define USB_VENDOR_ID_GIGABYTE		0x1044
-#define USB_PRODUCT_ID_WATERFORCE	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
+#define USB_PRODUCT_ID_WATERFORCE	0x7a4d	/* Gigabyte AORUS WATERFORCE X240, X280 and X360 */
 
 #define STATUS_VALIDITY		(2 * 1000)	/* ms */
 #define MAX_REPORT_LENGTH	6144
