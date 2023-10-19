@@ -12,11 +12,10 @@ The following devices are supported by this driver:
 
 Being a standard `hwmon` driver, it provides readings via `sysfs`, which are easily accessible through `lm-sensors` as usual.
 
-Report offsets were taken from https://github.com/namidairo/liquidctl/commit/a56db61350d01db8c3a008bb8816d870f6f2350d.
+Report offsets were initially taken from [here](https://github.com/namidairo/liquidctl/commit/a56db61350d01db8c3a008bb8816d870f6f2350d)
+and confirmed by me when I acquired a X240.
 
 ## Installation and usage
-
-**This driver is WIP - missing and/or possibly buggy functionality or behaviour can be expected at this stage.**
 
 First, clone the repository by running:
 
@@ -30,4 +29,4 @@ Then, compile it and insert it into the running kernel, replacing the existing i
 make dev
 ```
 
-You can then try running `sensors` and your devices should be listed there.
+You can then try running `sensors` and your device(s) should be listed there.
