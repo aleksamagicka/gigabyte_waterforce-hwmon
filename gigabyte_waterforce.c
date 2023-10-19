@@ -12,7 +12,7 @@
 #include <linux/module.h>
 #include <asm/unaligned.h>
 
-#define DRIVER_NAME	"waterforce"
+#define DRIVER_NAME	"gigabyte_waterforce"
 
 #define USB_VENDOR_ID_GIGABYTE		0x1044
 #define USB_PRODUCT_ID_WATERFORCE	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */

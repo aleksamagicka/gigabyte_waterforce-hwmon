@@ -1,4 +1,4 @@
-# waterforce-hwmon
+# gigabyte_waterforce-hwmon
 
 _Hwmon Linux kernel driver for monitoring Gigabyte AORUS Waterforce AIO coolers_
 
