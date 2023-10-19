@@ -24,7 +24,7 @@ it's not connected, the fan-related sensors will report zeroes.
 The addressable RGB LEDs and LCD screen are not supported in this driver and should
 be controlled through userspace tools.
 
-Usage Notes
+Usage notes
 -----------
 
 As these are USB HIDs, the driver can be loaded automatically by the kernel and
