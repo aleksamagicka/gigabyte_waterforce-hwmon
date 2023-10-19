@@ -266,11 +266,8 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		return 0;
 	}
 
-	if (data[0] != get_status_cmd[0] || data[1] != get_status_cmd[1]) {
-		/* Device returned improper data */
-		hid_err_once(priv->hdev, "firmware or device is possibly damaged\n");
+	if (data[0] != get_status_cmd[0] || data[1] != get_status_cmd[1])
 		return 0;
-	}
 
 	priv->temp_input[0] = data[WATERFORCE_TEMP_SENSOR] * 1000;
 	priv->speed_input[0] = get_unaligned_le16(data + WATERFORCE_FAN_SPEED);
