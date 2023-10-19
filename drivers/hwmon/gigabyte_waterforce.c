@@ -70,6 +70,43 @@ struct waterforce_data {
 	unsigned long updated;	/* jiffies */
 };
 
+static umode_t waterforce_is_visible(const void *data,
+				     enum hwmon_sensor_types type, u32 attr, int channel)
+{
+	switch (type) {
+	case hwmon_temp:
+		switch (attr) {
+		case hwmon_temp_label:
+		case hwmon_temp_input:
+			return 0444;
+		default:
+			break;
+		}
+		break;
+	case hwmon_fan:
+		switch (attr) {
+		case hwmon_fan_label:
+		case hwmon_fan_input:
+			return 0444;
+		default:
+			break;
+		}
+		break;
+	case hwmon_pwm:
+		switch (attr) {
+		case hwmon_pwm_input:
+			return 0444;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 /* Writes the command to the device with the rest of the report filled with zeroes */
 static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd, int cmd_length)
 {
@@ -119,43 +156,6 @@ unlock_and_return:
 			return ret;
 	} else {
 		return -ENODATA;
-	}
-
-	return 0;
-}
-
-static umode_t waterforce_is_visible(const void *data,
-				     enum hwmon_sensor_types type, u32 attr, int channel)
-{
-	switch (type) {
-	case hwmon_temp:
-		switch (attr) {
-		case hwmon_temp_label:
-		case hwmon_temp_input:
-			return 0444;
-		default:
-			break;
-		}
-		break;
-	case hwmon_fan:
-		switch (attr) {
-		case hwmon_fan_label:
-		case hwmon_fan_input:
-			return 0444;
-		default:
-			break;
-		}
-		break;
-	case hwmon_pwm:
-		switch (attr) {
-		case hwmon_pwm_input:
-			return 0444;
-		default:
-			break;
-		}
-		break;
-	default:
-		break;
 	}
 
 	return 0;
