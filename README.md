@@ -6,9 +6,9 @@ _Hwmon Linux kernel driver for monitoring Gigabyte AORUS Waterforce AIO coolers_
 
 The following devices are supported by this driver:
 
-* Gigabyte AORUS WATERFORCE X (240, 280, 360)
-* Gigabyte AORUS WATERFORCE X 360G
-* Gigabyte AORUS WATERFORCE EX 360
+* Gigabyte AORUS WATERFORCE X240
+* Gigabyte AORUS WATERFORCE X280
+* Gigabyte AORUS WATERFORCE X360
 
 Being a standard `hwmon` driver, it provides readings via `sysfs`, which are easily accessible through `lm-sensors` as usual.
 

@@ -15,9 +15,7 @@
 #define DRIVER_NAME	"waterforce"
 
 #define USB_VENDOR_ID_GIGABYTE		0x1044
-#define USB_PRODUCT_ID_WATERFORCE_1	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
-#define USB_PRODUCT_ID_WATERFORCE_2	0x7a52	/* Gigabyte AORUS WATERFORCE X 360G */
-#define USB_PRODUCT_ID_WATERFORCE_3	0x7a53	/* Gigabyte AORUS WATERFORCE EX 360 */
+#define USB_PRODUCT_ID_WATERFORCE	0x7a4d	/* Gigabyte AORUS WATERFORCE X (240, 280, 360) */
 
 #define STATUS_VALIDITY		2	/* seconds */
 #define MAX_REPORT_LENGTH	6144
@@ -506,8 +504,7 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	}
 	hid_device_io_stop(hdev);
 
-	if (priv->firmware_version != FIRMWARE_F14_VER &&
-	    hdev->product != USB_PRODUCT_ID_WATERFORCE_3)
+	if (priv->firmware_version != FIRMWARE_F14_VER)
 		priv->max_speed_rpm = LOWER_MAX_RPM;
 	else
 		priv->max_speed_rpm = DEFAULT_MAX_RPM;
@@ -534,9 +531,7 @@ static void waterforce_remove(struct hid_device *hdev)
 }
 
 static const struct hid_device_id waterforce_table[] = {
-	{ HID_USB_DEVICE(USB_VENDOR_ID_GIGABYTE, USB_PRODUCT_ID_WATERFORCE_1) },
-	{ HID_USB_DEVICE(USB_VENDOR_ID_GIGABYTE, USB_PRODUCT_ID_WATERFORCE_2) },
-	{ HID_USB_DEVICE(USB_VENDOR_ID_GIGABYTE, USB_PRODUCT_ID_WATERFORCE_3) },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_GIGABYTE, USB_PRODUCT_ID_WATERFORCE) },
 	{ }
 };
 
