@@ -262,7 +262,9 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 		/* Received a firmware version report */
 		priv->firmware_version =
 		    data[FIRMWARE_VER_START_OFFSET_1] * 10 + data[FIRMWARE_VER_START_OFFSET_2];
-		complete_all(&priv->fw_version_processed);
+
+		if (!completion_done(&priv->fw_version_processed))
+			complete_all(&priv->fw_version_processed);
 		return 0;
 	}
 
