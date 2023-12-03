@@ -124,7 +124,7 @@ static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd
 
 static int waterforce_get_status(struct waterforce_data *priv)
 {
-	int ret;
+	int ret = 0;
 
 	if (!mutex_lock_interruptible(&priv->status_report_request_mutex)) {
 		if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
