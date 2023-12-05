@@ -398,6 +398,7 @@ static void waterforce_remove(struct hid_device *hdev)
 {
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
 
+	debugfs_remove_recursive(priv->debugfs);
 	hwmon_device_unregister(priv->hwmon_dev);
 
 	hid_hw_close(hdev);
