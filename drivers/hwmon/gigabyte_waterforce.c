@@ -146,9 +146,11 @@ static int waterforce_get_status(struct waterforce_data *priv)
 		if (ret < 0)
 			return ret;
 
-		if (wait_for_completion_interruptible_timeout
-		    (&priv->status_report_received, msecs_to_jiffies(STATUS_VALIDITY)) <= 0)
-			ret = -ENODATA;
+		ret =
+		    wait_for_completion_interruptible_timeout(&priv->status_report_received,
+							      msecs_to_jiffies(STATUS_VALIDITY));
+		if (ret == 0)
+			ret = -ETIMEDOUT;
 unlock_and_return:
 		mutex_unlock(&priv->status_report_request_mutex);
 		if (ret < 0)
