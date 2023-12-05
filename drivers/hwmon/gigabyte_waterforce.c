@@ -186,7 +186,7 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 			*val = DIV_ROUND_CLOSEST(priv->duty_input[channel] * 255, 100);
 			break;
 		default:
-			break;
+			return -EOPNOTSUPP;
 		}
 		break;
 	default:
