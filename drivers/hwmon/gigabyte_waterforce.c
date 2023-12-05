@@ -223,9 +223,12 @@ static int waterforce_get_fw_ver(struct hid_device *hdev)
 	if (ret < 0)
 		return ret;
 
-	if (wait_for_completion_interruptible_timeout
-	    (&priv->fw_version_processed, msecs_to_jiffies(STATUS_VALIDITY)) <= 0)
-		return -ENODATA;
+	ret = wait_for_completion_interruptible_timeout(&priv->fw_version_processed,
+							msecs_to_jiffies(STATUS_VALIDITY));
+	if (ret == 0)
+		return -ETIMEDOUT;
+	else if (ret < 0)
+		return ret;
 
 	return 0;
 }
