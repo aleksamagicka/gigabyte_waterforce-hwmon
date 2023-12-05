@@ -302,6 +302,9 @@ static void waterforce_debugfs_init(struct waterforce_data *priv)
 {
 	char name[64];
 
+	if (!priv->firmware_version)
+		return;	/* There's nothing to show in debugfs */
+
 	scnprintf(name, sizeof(name), "%s-%s", DRIVER_NAME, dev_name(&priv->hdev->dev));
 
 	priv->debugfs = debugfs_create_dir(name, NULL);
