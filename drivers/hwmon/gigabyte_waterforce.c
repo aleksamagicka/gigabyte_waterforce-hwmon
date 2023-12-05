@@ -165,14 +165,10 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 			   u32 attr, int channel, long *val)
 {
 	struct waterforce_data *priv = dev_get_drvdata(dev);
-	int ret;
+	int ret = waterforce_get_status(priv);
 
-	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
-		/* Request status on demand */
-		ret = waterforce_get_status(priv);
-		if (ret < 0)
-			return ret;
-	}
+	if (ret < 0)
+		return ret;
 
 	switch (type) {
 	case hwmon_temp:
