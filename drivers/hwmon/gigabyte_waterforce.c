@@ -123,41 +123,40 @@ static int waterforce_write_expanded(struct waterforce_data *priv, const u8 *cmd
 
 static int waterforce_get_status(struct waterforce_data *priv)
 {
-	int ret = 0;
+	int ret = mutex_lock_interruptible(&priv->status_report_request_mutex);
 
-	if (!mutex_lock_interruptible(&priv->status_report_request_mutex)) {
-		if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
-			/* Data is up to date */
-			goto unlock_and_return;
-		}
+	if (ret < 0)
+		return ret;
 
-		/*
-		 * Disable raw event parsing for a moment to safely reinitialize the
-		 * completion. Reinit is done because hidraw could have triggered
-		 * the raw event parsing and marked the priv->status_report_received
-		 * completion as done.
-		 */
-		spin_lock_bh(&priv->status_report_request_lock);
-		reinit_completion(&priv->status_report_received);
-		spin_unlock_bh(&priv->status_report_request_lock);
-
-		/* Send command for getting status */
-		ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
-		if (ret < 0)
-			return ret;
-
-		ret =
-		    wait_for_completion_interruptible_timeout(&priv->status_report_received,
-							      msecs_to_jiffies(STATUS_VALIDITY));
-		if (ret == 0)
-			ret = -ETIMEDOUT;
-unlock_and_return:
-		mutex_unlock(&priv->status_report_request_mutex);
-		if (ret < 0)
-			return ret;
-	} else {
-		return -ENODATA;
+	if (!time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
+		/* Data is up to date */
+		goto unlock_and_return;
 	}
+
+	/*
+	 * Disable raw event parsing for a moment to safely reinitialize the
+	 * completion. Reinit is done because hidraw could have triggered
+	 * the raw event parsing and marked the priv->status_report_received
+	 * completion as done.
+	 */
+	spin_lock_bh(&priv->status_report_request_lock);
+	reinit_completion(&priv->status_report_received);
+	spin_unlock_bh(&priv->status_report_request_lock);
+
+	/* Send command for getting status */
+	ret = waterforce_write_expanded(priv, get_status_cmd, GET_STATUS_CMD_LENGTH);
+	if (ret < 0)
+		return ret;
+
+	ret = wait_for_completion_interruptible_timeout(&priv->status_report_received,
+							msecs_to_jiffies(STATUS_VALIDITY));
+	if (ret == 0)
+		ret = -ETIMEDOUT;
+
+unlock_and_return:
+	mutex_unlock(&priv->status_report_request_mutex);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }
