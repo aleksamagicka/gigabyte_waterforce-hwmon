@@ -294,9 +294,6 @@ static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
 	struct waterforce_data *priv = seqf->private;
 
-	if (!priv->firmware_version)
-		return -ENODATA;
-
 	seq_printf(seqf, "%u\n", priv->firmware_version);
 
 	return 0;
