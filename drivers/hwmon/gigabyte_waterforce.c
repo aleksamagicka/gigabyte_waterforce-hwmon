@@ -363,6 +363,11 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 	init_completion(&priv->status_report_received);
 	init_completion(&priv->fw_version_processed);
 
+	hid_device_io_start(hdev);
+	ret = waterforce_get_fw_ver(hdev);
+	if (ret < 0)
+		hid_warn(hdev, "fw version request failed with %d\n", ret);
+
 	priv->hwmon_dev = hwmon_device_register_with_info(&hdev->dev, "waterforce",
 							  priv, &waterforce_chip_info, NULL);
 	if (IS_ERR(priv->hwmon_dev)) {
@@ -370,11 +375,6 @@ static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id 
 		hid_err(hdev, "hwmon registration failed with %d\n", ret);
 		goto fail_and_close;
 	}
-
-	hid_device_io_start(hdev);
-	ret = waterforce_get_fw_ver(hdev);
-	if (ret < 0)
-		hid_warn(hdev, "fw version request failed with %d\n", ret);
 
 	waterforce_debugfs_init(priv);
 
