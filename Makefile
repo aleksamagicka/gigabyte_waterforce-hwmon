@@ -10,7 +10,7 @@ all: modules
 install: modules_install
 
 modules modules_install clean:
-	make -C $(KDIR) M=$$PWD $@
+	make W=1 C=1 -C $(KDIR) M=$$PWD $@
 
 checkpatch:
 	$(KDIR)/scripts/checkpatch.pl --strict --no-tree $(SOURCES)
