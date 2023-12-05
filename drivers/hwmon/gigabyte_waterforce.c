@@ -164,8 +164,8 @@ unlock_and_return:
 static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 			   u32 attr, int channel, long *val)
 {
-	int ret;
 	struct waterforce_data *priv = dev_get_drvdata(dev);
+	int ret;
 
 	if (time_after(jiffies, priv->updated + msecs_to_jiffies(STATUS_VALIDITY))) {
 		/* Request status on demand */
@@ -216,8 +216,8 @@ static int waterforce_read_string(struct device *dev, enum hwmon_sensor_types ty
 
 static int waterforce_get_fw_ver(struct hid_device *hdev)
 {
-	int ret;
 	struct waterforce_data *priv = hid_get_drvdata(hdev);
+	int ret;
 
 	ret = waterforce_write_expanded(priv, get_firmware_ver_cmd, GET_FIRMWARE_VER_CMD_LENGTH);
 	if (ret < 0)
