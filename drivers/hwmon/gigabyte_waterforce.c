@@ -171,7 +171,7 @@ static int waterforce_read(struct device *dev, enum hwmon_sensor_types type,
 		/* Request status on demand */
 		ret = waterforce_get_status(priv);
 		if (ret < 0)
-			return -ENODATA;
+			return ret;
 	}
 
 	switch (type) {
