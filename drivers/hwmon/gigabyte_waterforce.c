@@ -288,8 +288,6 @@ static int waterforce_raw_event(struct hid_device *hdev, struct hid_report *repo
 	return 0;
 }
 
-#ifdef CONFIG_DEBUG_FS
-
 static int firmware_version_show(struct seq_file *seqf, void *unused)
 {
 	struct waterforce_data *priv = seqf->private;
@@ -309,14 +307,6 @@ static void waterforce_debugfs_init(struct waterforce_data *priv)
 	priv->debugfs = debugfs_create_dir(name, NULL);
 	debugfs_create_file("firmware_version", 0444, priv->debugfs, priv, &firmware_version_fops);
 }
-
-#else
-
-static void waterforce_debugfs_init(struct waterforce_data *priv)
-{
-}
-
-#endif
 
 static int waterforce_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
