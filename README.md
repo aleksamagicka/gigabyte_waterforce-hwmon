@@ -15,6 +15,11 @@ Being a standard `hwmon` driver, it provides readings via `sysfs`, which are eas
 Report offsets were initially taken from [here](https://github.com/namidairo/liquidctl/commit/a56db61350d01db8c3a008bb8816d870f6f2350d)
 and confirmed by me when I acquired a X240.
 
+## Kernel availability
+
+This driver is mainlined since kernel v6.8. If you need additional features or bugfixes not yet present in the kernel, you can install
+the driver from this repo yourself by following the instructions in the next section.
+
 ## Installation and usage
 
 First, clone the repository by running:
